@@ -1,0 +1,14 @@
+{
+  "name": "verboticon-darkify",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node --experimental-modules index.mjs"
+  },
+  "dependencies": {
+    "@slack/client": "^5.0.2",
+    "fs-extra": "^8.1.0",
+    "node-fetch": "^2.6.0"
+  }
+}
