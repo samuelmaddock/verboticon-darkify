@@ -1,4 +1,5 @@
 import process from 'process'
+import { exec } from 'child_process'
 import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -18,34 +19,112 @@ if (!slackToken) {
 async function getAllEmoji(client) {
   const result = await client.emoji.list()
   const { emoji } = result
-  return emoji
+  const emojis = Object.entries(emoji).map(([name, uri]) => {
+    const isAlias = uri.startsWith('alias:')
+    if (isAlias) {
+      return { uri, name, alias: true }
+    } else {
+      const ext = path.extname(uri)
+      const filename = `${name}${ext}`
+      const filepath = path.join(CACHE_DIR, filename)
+      return { name, uri, filename, filepath }
+    }
+  })
+  return emojis
 }
 
-async function downloadEmoji(name, uri) {
-  const ext = path.extname(uri)
-  const filename = `${path.join(CACHE_DIR, name)}${ext}`
-  const exists = await fs.exists(filename)
+async function downloadEmoji(emoji) {
+  const exists = await fs.exists(emoji.filepath)
   if (exists) return
-  console.log(`Downloading ${name}`)
-  const stream = fs.createWriteStream(filename)
-  const resp = await fetch(uri)
+  console.log(`Downloading ${emoji.name}`)
+  const stream = fs.createWriteStream(emoji.filepath)
+  const resp = await fetch(emoji.uri)
   resp.body.pipe(stream)
 }
 
 async function downloadAllEmoji(emojis) {
   await fs.ensureDir(CACHE_DIR)
 
-  for (let [name, uri] of Object.entries(emojis)) {
-    const isAlias = uri.startsWith('alias:')
-    if (isAlias) continue
-    await downloadEmoji(name, uri)
+  for (let emoji of emojis) {
+    if (emoji.alias) continue
+    await downloadEmoji(emoji)
   }
+}
+
+const COLOR_FREQUENCY_REGEX = /(\d+):.+?(#[0-9a-fA-F]{8})/gi
+const NUM_PIXELS_REGEX = /Number pixels: (\d+)/i
+async function getColorData(filepath) {
+  const data = {}
+
+  const output = await new Promise((resolve, reject) => {
+    const cmd = `identify -verbose ${filepath.replace(/'/g, "\\'")}`
+    exec(cmd, (err, stdout) => {
+      if (err) {
+        reject(err)
+        return
+      }
+      resolve(stdout)
+    })
+  })
+
+  {
+    const matches = [...output.matchAll(COLOR_FREQUENCY_REGEX)]
+    const freqMap = matches.reduce((obj, match) => {
+      const amount = parseInt(match[1], 10)
+      const color = match[2]
+      obj[color] = amount
+      return obj
+    }, {})
+    data.histogram = freqMap
+  }
+
+  data.numPixels = parseInt(output.match(NUM_PIXELS_REGEX)[1], 10)
+
+  return data
+}
+
+const COLOR_NONE = '#00000000'
+const COLOR_BLACK = '#000000FF'
+
+async function determineVerboticon(emoji) {
+  if (emoji.name.includes('verboticon')) return true
+
+  // skip gifs
+  if (path.extname(emoji.uri) === '.gif') return false
+
+  const { histogram, numPixels } = await getColorData(emoji.filepath)
+  const numTransparentPixels = histogram[COLOR_NONE] || 0
+  const numBlackPixels = histogram[COLOR_BLACK] || 0
+  const percentPrimary = (numTransparentPixels + numBlackPixels) / numPixels
+  const isLikelyVerboticon = numTransparentPixels > numBlackPixels && numBlackPixels > 0 && percentPrimary > 0.9
+
+  if (isLikelyVerboticon) console.debug(`PROB VERBOTICON = ${emoji.name}`)
+
+  return isLikelyVerboticon
+}
+
+async function findAllVerboticons(emojis) {
+  const verboticons = []
+  for (let emoji of emojis) {
+    if (emoji.alias) continue
+    const isVerboticon = await determineVerboticon(emoji)
+    if (isVerboticon) {
+      verboticons.push(emoji)
+    }
+  }
+  return verboticons
 }
 
 async function main() {
   const client = new WebClient(slackToken)
   const emojis = await getAllEmoji(client)
   await downloadAllEmoji(emojis)
+  const verboticons = await findAllVerboticons(emojis)
+  console.log(verboticons.map(emoji => `:${emoji.name}:`).join(' '))
+
+  // TODO: add white background to all verboticons
+  // TODO: figure out whether we want to manually upload replacements or partition among volunteers
+  // TODO: remember to deal with aliases
 }
 
 main()
