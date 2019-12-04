@@ -185,8 +185,6 @@ async function processVerboticons(emojis) {
     await writeBackgroundColor(src, dest)
     bar.tick()
   }
-
-  return verboticons
 }
 
 async function main() {
@@ -199,6 +197,7 @@ async function main() {
   await processVerboticons(verboticons)
   // TODO: figure out whether we want to manually upload replacements or partition among volunteers
   // TODO: remember to deal with aliases
+  console.log('done!')
 }
 
 main()
