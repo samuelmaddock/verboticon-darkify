@@ -10,12 +10,15 @@ const { WebClient } = slack
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = path.join(__dirname, '/.cache')
+const OUTPUT_DIR = path.join(__dirname, '/dist')
 
 const slackToken = process.env.SLACK_ACCESS_TOKEN
 if (!slackToken) {
   console.error('Must define SLACK_ACCESS_TOKEN env var')
   process.exit(1)
 }
+
+const escapePath = filepath => filepath.replace(/'/g, "\\'")
 
 async function getAllEmoji(client) {
   const result = await client.emoji.list()
@@ -78,7 +81,7 @@ async function getColorData(filepath) {
   const data = {}
 
   const output = await new Promise((resolve, reject) => {
-    const cmd = `identify -verbose ${filepath.replace(/'/g, "\\'")}`
+    const cmd = `identify -verbose ${escapePath(filepath)}`
     exec(cmd, (err, stdout) => {
       if (err) {
         reject(err)
@@ -151,15 +154,49 @@ async function findAllVerboticons(emojis) {
   return verboticons
 }
 
+async function writeBackgroundColor(src, dest) {
+  await new Promise((resolve, reject) => {
+    // TODO: composite SVG rounded rect instead of pure background color?
+    const cmd = `convert ${escapePath(src)} -background "#FFFFFF" -flatten ${escapePath(dest)}`
+    exec(cmd, (err, stdout) => {
+      if (err) {
+        reject(err)
+        return
+      }
+      resolve(stdout)
+    })
+  })
+}
+
+// Processes verboticons to add background colors
+async function processVerboticons(emojis) {
+  await fs.ensureDir(OUTPUT_DIR)
+  
+  const numEmoji = emojis.length
+  const bar = new ProgressBar('processing verboticons [:bar] :current/:total :percent :etas', {
+    total: numEmoji,
+    width: 80
+  })
+
+  for (let i = 0; i < numEmoji; i++) {
+    const emoji = emojis[i]
+    const src = emoji.filepath
+    const dest = path.join(OUTPUT_DIR, emoji.filename)
+    await writeBackgroundColor(src, dest)
+    bar.tick()
+  }
+
+  return verboticons
+}
+
 async function main() {
   const client = new WebClient(slackToken)
   const emojis = await getAllEmoji(client)
   await downloadAllEmoji(emojis)
   const verboticons = await findAllVerboticons(emojis)
-
+  console.log(`Found ${verboticons.length} verboticons`)
   // console.log(verboticons.map(emoji => `:${emoji.name}:`).join(' '))
-
-  // TODO: add white background to all verboticons
+  await processVerboticons(verboticons)
   // TODO: figure out whether we want to manually upload replacements or partition among volunteers
   // TODO: remember to deal with aliases
 }
