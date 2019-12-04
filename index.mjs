@@ -78,6 +78,7 @@ async function downloadAllEmoji(emojis) {
 
 const COLOR_FREQUENCY_REGEX = /(\d+):.+?(#[0-9a-fA-F]{8})/gi
 const NUM_PIXELS_REGEX = /Number pixels: (\d+)/i
+const GRAYSCALE_CHANNEL_REGEX = /Gray:/i
 async function getColorData(filepath) {
   const data = {}
 
@@ -104,6 +105,7 @@ async function getColorData(filepath) {
   }
 
   data.numPixels = parseInt(output.match(NUM_PIXELS_REGEX)[1], 10)
+  data.grayscale = Boolean(output.match(GRAYSCALE_CHANNEL_REGEX))
 
   return data
 }
@@ -117,11 +119,12 @@ async function determineVerboticon(emoji) {
   // skip gifs
   if (path.extname(emoji.uri) === '.gif') return false
 
-  const { histogram, numPixels } = await getColorData(emoji.filepath)
+  const { histogram, numPixels, grayscale } = await getColorData(emoji.filepath)
   const numTransparentPixels = histogram[COLOR_NONE] || 0
   const numBlackPixels = histogram[COLOR_BLACK] || 0
   const percentPrimary = (numTransparentPixels + numBlackPixels) / numPixels
-  const isLikelyVerboticon = numTransparentPixels > numBlackPixels && numBlackPixels > 0 && percentPrimary > 0.9
+  const isLikelyVerboticon =
+    grayscale && numTransparentPixels > numBlackPixels && numBlackPixels > 0 && percentPrimary > 0.9
 
   // if (isLikelyVerboticon) console.debug(`PROB VERBOTICON = ${emoji.name}`)
 
