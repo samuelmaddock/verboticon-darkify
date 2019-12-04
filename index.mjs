@@ -11,6 +11,7 @@ const { WebClient } = slack
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = path.join(__dirname, '/.cache')
 const OUTPUT_DIR = path.join(__dirname, '/dist')
+const BACKGROUND_PATH = path.join(__dirname, 'background.svg')
 
 const slackToken = process.env.SLACK_ACCESS_TOKEN
 if (!slackToken) {
@@ -154,10 +155,9 @@ async function findAllVerboticons(emojis) {
   return verboticons
 }
 
-async function writeBackgroundColor(src, dest) {
-  await new Promise((resolve, reject) => {
-    // TODO: composite SVG rounded rect instead of pure background color?
-    const cmd = `convert ${escapePath(src)} -background "#FFFFFF" -flatten ${escapePath(dest)}`
+function writeBackgroundColor(src, dest) {
+  return new Promise((resolve, reject) => {
+    const cmd = `composite -background transparent ${escapePath(src)} ${BACKGROUND_PATH} ${escapePath(dest)}`
     exec(cmd, (err, stdout) => {
       if (err) {
         reject(err)
@@ -171,7 +171,7 @@ async function writeBackgroundColor(src, dest) {
 // Processes verboticons to add background colors
 async function processVerboticons(emojis) {
   await fs.ensureDir(OUTPUT_DIR)
-  
+
   const numEmoji = emojis.length
   const bar = new ProgressBar('processing verboticons [:bar] :current/:total :percent :etas', {
     total: numEmoji,
