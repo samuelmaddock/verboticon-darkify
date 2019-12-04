@@ -5,6 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import fetch from 'node-fetch'
 import slack from '@slack/client'
+import ProgressBar from 'progress'
 const { WebClient } = slack
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -34,20 +35,40 @@ async function getAllEmoji(client) {
 }
 
 async function downloadEmoji(emoji) {
-  const exists = await fs.exists(emoji.filepath)
-  if (exists) return
-  console.log(`Downloading ${emoji.name}`)
   const stream = fs.createWriteStream(emoji.filepath)
   const resp = await fetch(emoji.uri)
   resp.body.pipe(stream)
+  await new Promise((resolve, reject) => {
+    stream.once('finish', resolve)
+    stream.once('error', reject)
+  })
 }
 
 async function downloadAllEmoji(emojis) {
   await fs.ensureDir(CACHE_DIR)
 
-  for (let emoji of emojis) {
-    if (emoji.alias) continue
+  const numEmoji = emojis.length
+  const bar = new ProgressBar('downloading emoji [:bar] :current/:total :percent :etas', {
+    total: numEmoji,
+    width: 80
+  })
+
+  for (let i = 0; i < numEmoji; i++) {
+    const emoji = emojis[i]
+
+    if (emoji.alias) {
+      bar.tick()
+      continue
+    }
+
+    const exists = await fs.exists(emoji.filepath)
+    if (exists) {
+      bar.tick()
+      continue
+    }
+
     await downloadEmoji(emoji)
+    bar.tick()
   }
 }
 
@@ -98,20 +119,35 @@ async function determineVerboticon(emoji) {
   const percentPrimary = (numTransparentPixels + numBlackPixels) / numPixels
   const isLikelyVerboticon = numTransparentPixels > numBlackPixels && numBlackPixels > 0 && percentPrimary > 0.9
 
-  if (isLikelyVerboticon) console.debug(`PROB VERBOTICON = ${emoji.name}`)
+  // if (isLikelyVerboticon) console.debug(`PROB VERBOTICON = ${emoji.name}`)
 
   return isLikelyVerboticon
 }
 
 async function findAllVerboticons(emojis) {
+  const numEmoji = emojis.length
+  const bar = new ProgressBar('discovering verboticons [:bar] :current/:total :percent :etas', {
+    total: numEmoji,
+    width: 80
+  })
+
   const verboticons = []
-  for (let emoji of emojis) {
-    if (emoji.alias) continue
+  for (let i = 0; i < numEmoji; i++) {
+    const emoji = emojis[i]
+
+    if (emoji.alias) {
+      bar.tick()
+      continue
+    }
+
     const isVerboticon = await determineVerboticon(emoji)
     if (isVerboticon) {
       verboticons.push(emoji)
     }
+
+    bar.tick()
   }
+
   return verboticons
 }
 
@@ -120,7 +156,8 @@ async function main() {
   const emojis = await getAllEmoji(client)
   await downloadAllEmoji(emojis)
   const verboticons = await findAllVerboticons(emojis)
-  console.log(verboticons.map(emoji => `:${emoji.name}:`).join(' '))
+
+  // console.log(verboticons.map(emoji => `:${emoji.name}:`).join(' '))
 
   // TODO: add white background to all verboticons
   // TODO: figure out whether we want to manually upload replacements or partition among volunteers
