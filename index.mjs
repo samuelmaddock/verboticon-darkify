@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url'
 import fetch from 'node-fetch'
 import slack from '@slack/client'
 import ProgressBar from 'progress'
+import emojme from 'emojme'
+
 const { WebClient } = slack
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -14,8 +16,20 @@ const OUTPUT_DIR = path.join(__dirname, '/dist')
 const BACKGROUND_PATH = path.join(__dirname, 'background.svg')
 
 const slackToken = process.env.SLACK_ACCESS_TOKEN
-if (!slackToken) {
+if (typeof slackToken !== 'string') {
   console.error('Must define SLACK_ACCESS_TOKEN env var')
+  process.exit(1)
+}
+
+const slackWorkspace = process.env.SLACK_WORKSPACE
+if (typeof slack !== 'string') {
+  console.error('Must define SLACK_WORKSPACE env var')
+  process.exit(1)
+}
+
+const slackUserToken = process.env.SLACK_USER_TOKEN
+if (typeof slackUserToken !== 'string') {
+  console.error('Must define SLACK_USER_TOKEN env var')
   process.exit(1)
 }
 
@@ -27,7 +41,7 @@ async function getAllEmoji(client) {
   const emojis = Object.entries(emoji).map(([name, uri]) => {
     const isAlias = uri.startsWith('alias:')
     if (isAlias) {
-      return { uri, name, alias: true }
+      return { uri, name, alias: uri.substr('alias:'.length) }
     } else {
       const ext = path.extname(uri)
       const filename = `${name}${ext}`
@@ -114,7 +128,9 @@ const COLOR_NONE = '#00000000'
 const COLOR_BLACK = '#000000FF'
 
 async function determineVerboticon(emoji) {
-  if (emoji.name.includes('verboticon')) return true
+  // NOTE: commented out to avoid replacing verboticons already updated to
+  // support dark mode (already have white background)
+  // if (emoji.name.includes('verboticon')) return true
 
   // skip gifs
   if (path.extname(emoji.uri) === '.gif') return false
@@ -190,6 +206,47 @@ async function processVerboticons(emojis) {
   }
 }
 
+async function removeEmoji(emoji) {
+  // TODO: implement emoji.delete API request
+}
+
+async function addEmoji(emoji) {
+  const src = path.join(OUTPUT_DIR, emoji.filename)
+  await emojme.add(slackWorkspace, slackUserToken, {
+    src,
+    name: emoji.name,
+    allowCollisions: false
+  })
+}
+
+async function restoreEmojiAliases(emoji, allEmojis) {
+  const aliases = allEmojis.filter(e => e.alias === emoji.name).map(e => e.name)
+
+  for (let i = 0; i < aliases.length; i++) {
+    await emojme.add(slackWorkspace, slackUserToken, {
+      name: aliases[i],
+      aliasFor: emoji.name
+    })
+  }
+}
+
+async function replaceVerboticons(verboticons, emojis) {
+  const numVerboticons = verboticons.length
+  const bar = new ProgressBar('replacing verboticons [:bar] :current/:total :percent :etas', {
+    total: numVerboticons,
+    width: 80
+  })
+
+  // TODO: test emojme using CLI before running script
+  for (let i = 0; i < numVerboticons; i++) {
+    const verboticon = verboticons[i]
+    await removeEmoji(verboticon)
+    await addEmoji(verboticon)
+    await restoreEmojiAliases(verboticon, emojis)
+    bar.tick()
+  }
+}
+
 async function main() {
   const client = new WebClient(slackToken)
   const emojis = await getAllEmoji(client)
@@ -198,8 +255,7 @@ async function main() {
   console.log(`Found ${verboticons.length} verboticons`)
   // console.log(verboticons.map(emoji => `:${emoji.name}:`).join(' '))
   await processVerboticons(verboticons)
-  // TODO: figure out whether we want to manually upload replacements or partition among volunteers
-  // TODO: remember to deal with aliases
+  await replaceVerboticons(verboticons, emojis)
   console.log('done!')
 }
 
