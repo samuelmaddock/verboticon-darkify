@@ -10,10 +10,16 @@ import emojme from 'emojme'
 
 const { WebClient } = slack
 
+import emojiRemove from './slack-emoji-remove.mjs'
+
+// USAGE: npm start [emoji_name1, emoji_name2...]
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = path.join(__dirname, '/.cache')
 const OUTPUT_DIR = path.join(__dirname, '/dist')
 const BACKGROUND_PATH = path.join(__dirname, 'background.svg')
+
+const argEmojis = process.argv.slice(2)
 
 const slackToken = process.env.SLACK_ACCESS_TOKEN
 if (typeof slackToken !== 'string') {
@@ -22,7 +28,7 @@ if (typeof slackToken !== 'string') {
 }
 
 const slackWorkspace = process.env.SLACK_WORKSPACE
-if (typeof slack !== 'string') {
+if (typeof slackWorkspace !== 'string') {
   console.error('Must define SLACK_WORKSPACE env var')
   process.exit(1)
 }
@@ -207,7 +213,7 @@ async function processVerboticons(emojis) {
 }
 
 async function removeEmoji(emoji) {
-  // TODO: implement emoji.delete API request
+  await emojiRemove(slackWorkspace, slackUserToken, { name: emoji.name })
 }
 
 async function addEmoji(emoji) {
@@ -251,11 +257,26 @@ async function main() {
   const client = new WebClient(slackToken)
   const emojis = await getAllEmoji(client)
   await downloadAllEmoji(emojis)
-  const verboticons = await findAllVerboticons(emojis)
-  console.log(`Found ${verboticons.length} verboticons`)
-  // console.log(verboticons.map(emoji => `:${emoji.name}:`).join(' '))
+
+  let verboticons
+
+  if (argEmojis.length > 0) {
+    verboticons = argEmojis.map(emojiName => emojis.find(emoji => emoji.name === emojiName)).filter(Boolean)
+  } else {
+    verboticons = await findAllVerboticons(emojis)
+  }
+
+  if (verboticons.length === 0) {
+    console.log('No verboticons found')
+    return
+  }
+
+  const emojiList = verboticons.map(emoji => `:${emoji.name}:`).join(' ')
+  console.log(`Updating ${verboticons.length} verboticons:\n${emojiList}`)
+
   await processVerboticons(verboticons)
   await replaceVerboticons(verboticons, emojis)
+
   console.log('done!')
 }
 
