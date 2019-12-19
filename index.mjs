@@ -247,9 +247,14 @@ async function replaceVerboticons(verboticons, emojis) {
 
   for (let i = 0; i < numVerboticons; i++) {
     const verboticon = verboticons[i]
-    await removeEmoji(verboticon)
-    await addEmoji(verboticon)
-    await restoreEmojiAliases(verboticon, emojis)
+    try {
+      await removeEmoji(verboticon)
+      await addEmoji(verboticon)
+      await restoreEmojiAliases(verboticon, emojis)
+    } catch (e) {
+      console.log(`Failed to replace ${verboticon.name}`)
+      throw e
+    }
     bar.tick()
   }
 }
