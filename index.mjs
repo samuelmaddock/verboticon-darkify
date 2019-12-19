@@ -221,7 +221,7 @@ async function addEmoji(emoji) {
   await emojme.add(slackWorkspace, slackUserToken, {
     src,
     name: emoji.name,
-    allowCollisions: false
+    allowCollisions: true // prevent fetching emoji list each upload
   })
 }
 
@@ -231,7 +231,8 @@ async function restoreEmojiAliases(emoji, allEmojis) {
   for (let i = 0; i < aliases.length; i++) {
     await emojme.add(slackWorkspace, slackUserToken, {
       name: aliases[i],
-      aliasFor: emoji.name
+      aliasFor: emoji.name,
+      allowCollisions: true // prevent fetching emoji list each upload
     })
   }
 }
