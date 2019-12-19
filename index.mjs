@@ -39,6 +39,8 @@ if (typeof slackUserToken !== 'string') {
   process.exit(1)
 }
 
+const IS_DRY_RUN = Boolean(process.env.DRY_RUN)
+
 const escapePath = filepath => filepath.replace(/'/g, "\\'")
 
 async function getAllEmoji(client) {
@@ -148,8 +150,6 @@ async function determineVerboticon(emoji) {
   const isLikelyVerboticon =
     grayscale && numTransparentPixels > numBlackPixels && numBlackPixels > 0 && percentPrimary > 0.9
 
-  // if (isLikelyVerboticon) console.debug(`PROB VERBOTICON = ${emoji.name}`)
-
   return isLikelyVerboticon
 }
 
@@ -243,7 +243,6 @@ async function replaceVerboticons(verboticons, emojis) {
     width: 80
   })
 
-  // TODO: test emojme using CLI before running script
   for (let i = 0; i < numVerboticons; i++) {
     const verboticon = verboticons[i]
     await removeEmoji(verboticon)
@@ -273,6 +272,8 @@ async function main() {
 
   const emojiList = verboticons.map(emoji => `:${emoji.name}:`).join(' ')
   console.log(`Updating ${verboticons.length} verboticons:\n${emojiList}`)
+
+  if (IS_DRY_RUN) return
 
   await processVerboticons(verboticons)
   await replaceVerboticons(verboticons, emojis)
