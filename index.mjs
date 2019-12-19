@@ -7,6 +7,7 @@ import fetch from 'node-fetch'
 import slack from '@slack/client'
 import ProgressBar from 'progress'
 import emojme from 'emojme'
+import prompts from 'prompts'
 
 const { WebClient } = slack
 
@@ -272,9 +273,17 @@ async function main() {
   }
 
   const emojiList = verboticons.map(emoji => `:${emoji.name}:`).join(' ')
-  console.log(`Updating ${verboticons.length} verboticons:\n${emojiList}`)
+  console.log(`Found ${verboticons.length} verboticons:\n${emojiList}`)
 
   if (IS_DRY_RUN) return
+
+  const response = await prompts({
+    type: 'confirm',
+    name: 'value',
+    message: 'Looks good?',
+    initial: true
+  })
+  if (!response.value) return
 
   await processVerboticons(verboticons)
   await replaceVerboticons(verboticons, emojis)
